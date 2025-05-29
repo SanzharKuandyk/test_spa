@@ -1,6 +1,5 @@
-<script setup>
-import { onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -9,14 +8,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFiltersStore } from '@/store/filters';
 import { fetchCategoryList } from '../api/product';
 
-const route = useRoute();
-const router = useRouter();
+const filtersStore = useFiltersStore();
 
-const search = ref(route.query.search || '');
-const category = ref(route.query.category || '');
-const categories = ref(['all']);
+const categories = ref<string[]>(['all']);
 
 onMounted(async () => {
   try {
@@ -26,23 +23,17 @@ onMounted(async () => {
     console.error('Failed to fetch categories:', err);
   }
 });
-
-watch([search, category], () => {
-  const c = category.value === 'all' ? '' : category.value;
-  router.replace({
-    query: {
-      ...route.query,
-      search: search.value || undefined,
-      category: c || undefined,
-    },
-  });
-});
 </script>
 
 <template>
   <div class="flex gap-4 items-center justify-center w-full max-w-[400px]">
-    <Input v-model="search" placeholder="Search products..." class="w-64" />
-    <Select v-model="category" class="w-40">
+    <Input
+      v-model="filtersStore.search"
+      placeholder="Search products..."
+      class="w-64"
+    />
+
+    <Select v-model="filtersStore.category" class="w-40">
       <SelectTrigger class="bg-black text-white">
         <SelectValue placeholder="Select category" />
       </SelectTrigger>

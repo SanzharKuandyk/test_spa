@@ -11,9 +11,9 @@ export async function fetchProducts(
   let url = `${BASE_URL}/products`;
 
   if (category && category !== 'all') {
-    url += `/category/${category}`;
+    url += `/category/${category}?skip=${skip}&limit=${limit}`;
   } else if (search) {
-    url += `/search?q=${search}`;
+    url += `/search?q=${encodeURIComponent(search)}&skip=${skip}&limit=${limit}`;
   } else {
     url += `?skip=${skip}&limit=${limit}`;
   }

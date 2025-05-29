@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import ProductDetailed from '@/views/ProductDetailed.vue'
-import ProductList from '@/views/ProductList.vue'
+import { createRouter, createWebHistory } from 'vue-router';
+import ProductDetailed from '@/views/ProductDetailed.vue';
+import ProductList from '@/views/ProductList.vue';
 
 const routes = [
   {
@@ -13,11 +13,11 @@ const routes = [
     name: 'ProductDetailed',
     component: ProductDetailed,
   },
-]
+];
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-})
+});
 
-export default router
+export default router;

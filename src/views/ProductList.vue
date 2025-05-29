@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { fetchProducts } from '@/api/product';
 import Filters from '@/components/Filters.vue';
 import ProductCard from '@/components/ProductCard.vue';
+import { Button } from '@/components/ui/button';
 import {
   Pagination,
   PaginationContent,
@@ -13,171 +14,235 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { Button } from '../components/ui/button';
-
-const products = ref<Product[]>([]);
-const filteredProducts = ref<Product[]>([]);
-const isLoading = ref(false);
-const currentPage = ref(1);
-const totalProducts = ref(0);
-const limit = ref(12);
+import { Skeleton } from '@/components/ui/skeleton';
+import { useFiltersStore } from '@/store/filters';
 
 const route = useRoute();
 const router = useRouter();
+const filtersStore = useFiltersStore();
 
-let debounceTimer: number;
+const products = ref<Product[]>([]);
+const totalProducts = ref(0);
+const limit = ref(9);
+const currentPage = ref(1);
+const isLoading = ref(false);
 
-async function loadProducts(search: string, category: string, page = 1) {
+// use cache
+const categoryCache = ref<Record<string, Product[]>>({});
+
+async function loadProducts(search: string, category: string, page: number) {
   isLoading.value = true;
-  const skip = (page - 1) * limit.value;
 
-  let data;
-  let filtered = [];
-
-  if (category && category !== 'all') {
-    // fetch by category, ignore search in API
-    data = await fetchProducts(skip, limit.value, '', category);
-
-    // local search filtering
-    if (search) {
-      filtered = data.products.filter((p: Product) =>
-        p.title.toLowerCase().includes(search.toLowerCase()),
-      );
-    } else {
-      filtered = data.products;
-    }
-
-    totalProducts.value = filtered.length;
-  } else if (search) {
-    // fetch by search
-    data = await fetchProducts(skip, limit.value, search, '');
-
-    filtered = data.products;
+  if (category === 'all') {
+    const skip = (page - 1) * limit.value;
+    const data = await fetchProducts(skip, limit.value, search, '');
+    products.value = data.products;
     totalProducts.value = data.total;
   } else {
-    // fetch all
-    data = await fetchProducts(skip, limit.value, '', '');
-    filtered = data.products;
-    totalProducts.value = data.total;
+    // check cache first
+    if (!categoryCache.value[category]) {
+      const data = await fetchProducts(0, 1000, '', category);
+      categoryCache.value[category] = data.products;
+    }
+
+    const filtered = categoryCache.value[category].filter(p =>
+      p.title.toLowerCase().includes(search.toLowerCase()),
+    );
+
+    totalProducts.value = filtered.length;
+
+    const skip = (page - 1) * limit.value;
+    products.value = filtered.slice(skip, skip + limit.value);
   }
 
-  products.value = filtered;
-  filteredProducts.value = filtered;
   isLoading.value = false;
 }
 
-function changePage(page: number) {
+function debounce<T extends (...args: any[]) => void>(fn: T, delay = 400) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeoutId)
+      clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+
+const debouncedSearchUpdate = debounce((newSearch: string) => {
   router.replace({
     query: {
-      ...route.query,
-      page: page !== 1 ? page : undefined,
+      search: newSearch || undefined,
+      category:
+        filtersStore.category !== 'all' ? filtersStore.category : undefined,
+      page: undefined,
+    },
+  });
+});
+
+function immediateCategoryUpdate(newCategory: string) {
+  router.replace({
+    query: {
+      search: filtersStore.search || undefined,
+      category: newCategory !== 'all' ? newCategory : undefined,
+      page: undefined,
     },
   });
 }
 
 watch(
-  () => [route.query.category, route.query.search, route.query.page],
-  ([newCategory, newSearch, newPage], oldValue) => {
-    const [oldCategory, oldSearch, _] = oldValue || [];
+  () => route.query,
+  (newQuery) => {
+    const search = (newQuery.search as string) || '';
+    const category = (newQuery.category as string) || 'all';
+    const page = Number(newQuery.page) || 1;
 
-    clearTimeout(debounceTimer);
+    filtersStore.search = search;
+    filtersStore.category = category;
+    currentPage.value = page;
 
-    debounceTimer = setTimeout(() => {
-      const isSearchChanged = newSearch !== oldSearch;
-      const isCategoryChanged = newCategory !== oldCategory;
-
-      if (isSearchChanged || isCategoryChanged) {
-        currentPage.value = 1;
-        router.replace({
-          query: {
-            ...route.query,
-            page: undefined,
-            search: newSearch || undefined,
-            category: newCategory || undefined,
-          },
-        });
-      } else {
-        currentPage.value = Number(newPage) || 1;
-      }
-
-      loadProducts(
-        (newSearch as string) || '',
-        (newCategory as string) || '',
-        currentPage.value,
-      );
-    }, 300);
+    loadProducts(search, category, page);
   },
   { immediate: true },
+);
+
+watch(
+  () => filtersStore.search,
+  (newSearch) => {
+    debouncedSearchUpdate(newSearch);
+  },
+);
+
+watch(
+  () => filtersStore.category,
+  (newCategory) => {
+    immediateCategoryUpdate(newCategory);
+  },
 );
 </script>
 
 <template>
   <div class="flex flex-col h-full w-full">
-    <header class="mb-6">
-      <h1 class="text-2xl font-bold text-center">
+    <header class="mb-8">
+      <h1 class="text-3xl font-extrabold text-center">
         Products
       </h1>
     </header>
 
     <div class="flex justify-center mb-6">
-      <Filters class="w-[400px]" />
+      <Filters />
     </div>
 
     <div class="flex-1 flex flex-col px-4">
-      <div v-if="isLoading" class="text-center p-4">
-        Loading products...
+      <div
+        v-if="isLoading"
+        class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6"
+      >
+        <Skeleton v-for="n in 6" :key="n" class="h-64 w-full rounded-xl" />
       </div>
 
-      <div v-else class="flex-1 overflow-auto max-h-[600px]">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <ProductCard v-for="p in filteredProducts" :key="p.id" :product="p" />
-        </div>
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+        <ProductCard v-for="p in products" :key="p.id" :product="p" />
       </div>
 
-      <div class="flex justify-center mt-4 text-white">
+      <div class="flex justify-center mt-8">
         <Pagination
           v-slot="{ page }"
           :items-per-page="limit"
           :total="totalProducts"
           :default-page="currentPage"
-          @update:page="changePage"
+          @update:page="
+            (newPage: number) => {
+              router.replace({
+                query: {
+                  search: filtersStore.search || undefined,
+                  category:
+                    filtersStore.category !== 'all'
+                      ? filtersStore.category
+                      : undefined,
+                  page: newPage !== 1 ? newPage : undefined,
+                },
+              });
+            }
+          "
         >
           <PaginationContent v-slot="{ items }">
             <PaginationPrevious
               :disabled="page === 1"
-              class="text-white hover:text-blue-500"
-              @click="changePage(page - 1)"
+              class="bg-muted text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted-foreground hover:text-background transition-colors"
+              @click="
+                () => {
+                  if (page > 1) {
+                    router.replace({
+                      query: {
+                        search: filtersStore.search || undefined,
+                        category:
+                          filtersStore.category !== 'all'
+                            ? filtersStore.category
+                            : undefined,
+                        page: page - 1 !== 1 ? page - 1 : undefined,
+                      },
+                    });
+                  }
+                }
+              "
             />
-
             <template v-for="(item, index) in items" :key="index">
               <PaginationItem
                 v-if="item.type === 'page'"
                 :value="item.value"
-                @click="changePage(item.value)"
+                @click="
+                  () => {
+                    router.replace({
+                      query: {
+                        search: filtersStore.search || undefined,
+                        category:
+                          filtersStore.category !== 'all'
+                            ? filtersStore.category
+                            : undefined,
+                        page: item.value !== 1 ? item.value : undefined,
+                      },
+                    });
+                  }
+                "
               >
                 <Button
-                  class="w-10 h-10 p-0 text-white hover:text-blue-500"
                   variant="outline"
-                  :style="
-                    item.value === currentPage
-                      ? 'background-color: #2563eb; color: white; border-color: #2563eb;'
-                      : ''
-                  "
+                  size="icon"
+                  class="transition-colors rounded-lg"
+                  :class="{
+                    'bg-primary text-primary-foreground font-semibold shadow-md border-primary hover:bg-primary/90':
+                      item.value === currentPage,
+                    'bg-muted text-muted-foreground hover:bg-muted-foreground/80 hover:text-background':
+                      item.value !== currentPage,
+                  }"
                 >
                   {{ item.value }}
                 </Button>
               </PaginationItem>
-
               <PaginationEllipsis
                 v-else-if="item.type === 'ellipsis'"
                 :index="index"
+                class="text-muted-foreground"
               />
             </template>
-
             <PaginationNext
               :disabled="page * limit >= totalProducts"
-              class="text-white hover:text-blue-500"
-              @click="changePage(page + 1)"
+              class="bg-muted text-muted-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-muted-foreground hover:text-background transition-colors"
+              @click="
+                () => {
+                  if (page * limit < totalProducts) {
+                    router.replace({
+                      query: {
+                        search: filtersStore.search || undefined,
+                        category:
+                          filtersStore.category !== 'all'
+                            ? filtersStore.category
+                            : undefined,
+                        page: page + 1 !== 1 ? page + 1 : undefined,
+                      },
+                    });
+                  }
+                }
+              "
             />
           </PaginationContent>
         </Pagination>
